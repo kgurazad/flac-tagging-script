@@ -13,6 +13,19 @@ metaflac = '/usr/bin/metaflac'
 # fpcalc = '/usr/local/bin/fpcalc'
 fpcalc = '/usr/bin/fpcalc'
 
+def validate_json(s):
+    while True:
+        try:
+            data = json.loads(s)
+            break
+        except json.decoder.JSONDecodeError as e:
+            if not e.args[0].startswith("Expecting ',' delimiter:"):
+                raise
+            s = ','.join((s[:e.pos], s[e.pos:]))
+        #
+    #
+    return s
+            
 def pad_directory_name(path):
     if(path[len(path) - 1] != '/'):
          return path + '/'
@@ -47,7 +60,7 @@ def get_acoustid_json(url):
     while(acoustid_json is None):
         curl = subprocess.run(['/usr/bin/curl', url], capture_output=True)
         print(curl.stdout)
-        curl_output = str_from_bitstream(curl.stdout)
+        curl_output = validate_json(str_from_bitstream(curl.stdout))
         if(curl_output.find('error') == -1):
             acoustid_json = curl_output
             print(acoustid_json)
