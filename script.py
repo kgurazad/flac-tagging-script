@@ -5,10 +5,13 @@ import json
 
 apikey = 'uJfTlXwih6'
 # apikey = 'v8pQ6oyB'
-flac = '/usr/local/bin/flac'
-# flac = '/usr/bin/flac'
-metaflac = '/usr/local/bin/metaflac'
-# metaflac = '/usr/bin/metaflac'
+
+# flac = '/usr/local/bin/flac'
+flac = '/usr/bin/flac'
+# metaflac = '/usr/local/bin/metaflac'
+metaflac = '/usr/bin/metaflac'
+# fpcalc = '/usr/local/bin/fpcalc'
+fpcalc = '/usr/bin/fpcalc'
 
 def pad_directory_name(path):
     if(path[len(path) - 1] != '/'):
@@ -36,12 +39,14 @@ def create_acoustid_url(duration, fingerprint):
     return 'https://api.acoustid.org/v2/lookup?meta=recordings+releasegroups+releases+tracks+compress+sources&duration=' + duration + '&fingerprint=' + fingerprint + '&client=' + apikey + '&format=json'
 
 def str_from_bitstream(bitstream):
-    return str(bitstream).replace('b\'', '').replace('\'', '')
+    string = str(bitstream)
+    return string[slice(2, len(string) - 1)]
 
 def get_acoustid_json(url):
     acoustid_json = None;
     while(acoustid_json is None):
         curl = subprocess.run(['/usr/bin/curl', url], capture_output=True)
+        print(curl.stdout)
         curl_output = str_from_bitstream(curl.stdout)
         if(curl_output.find('error') == -1):
             acoustid_json = curl_output
@@ -55,10 +60,12 @@ def get_acoustid_json(url):
     return acoustid_json
 
 def get_track_number(filename):
+    print(filename)
     return int(filename.split('.')[0])
 
 def escape_string_for_metaflac(str):
-    return str.replace(' ', '\ ').replace(';', '\;')
+#    return str.replace(' ', '\ ').replace(';', '\;')
+    return str
 
 def try_identify_track(acoustid_response, track_number, album_blacklist=[], match_track_number=True):
     for result in acoustid_response:
@@ -107,12 +114,13 @@ def try_identify_track(acoustid_response, track_number, album_blacklist=[], matc
     return 'track not identified'
 
 def identify_track(path, filename, track_number, album_blacklist=[]):
-    fpcalc = subprocess.run(['/usr/local/bin/fpcalc', path + filename], capture_output=True)
+    fpcalc = subprocess.run(['fpcalc', path + filename], capture_output=True)
     fpcalc_output = str_from_bitstream(fpcalc.stdout).split('\\n')
     duration = fpcalc_output[0].replace('DURATION=', '')
     fingerprint = fpcalc_output[1].replace('FINGERPRINT=', '')
     url = create_acoustid_url(duration, fingerprint);
     acoustid_json = get_acoustid_json(url)
+    print(acoustid_json)
     acoustid_response = json.loads(acoustid_json)['results']
     track_identity = 'track not identified'
     match_track_number = True
@@ -158,7 +166,9 @@ def tag_tracks(path, flac_files, art_path, track_identities):
         filepath = path + filename
         add_image_art = subprocess.run([flac, '-f', filepath, '--picture=' + art_path])
         create_vorbis_comment = subprocess.run([metaflac, '--remove-tag=ARTIST', '--remove-tag=ALBUM', '--remove-tag=TITLE', '--remove-tag=DATE', '--set-tag=ARTIST=' + track_identities[filename]['full_artist'], '--set-tag=ALBUM=' + track_identities[filename]['album_name'], '--set-tag=TITLE=' + track_identities[filename]['track_name'], '--set-tag=DATE=' + track_identities[filename]['year'], filepath])
-
+        print(add_image_art)
+        print(create_vorbis_comment)
+        
     return
 
 path = sys.argv[1]
@@ -167,8 +177,12 @@ print(path)
 print('creating new working directory:')
 working_path = create_working_path(path)
 flac_files = get_flac_files(working_path)
+'''
+flac_files = get_flac_files(path)
 print(flac_files)
-track_identities = get_track_identities(path, flac_files)
+identify_track(path, flac_files[0], 1)
+'''
+track_identities = get_track_identities(working_path, flac_files)
 album_counts = get_album_counts(flac_files, track_identities)
 
 album_ids = []
@@ -179,26 +193,29 @@ while(len(album_counts.keys()) > 3):
     print('uh oh')
     # print('here is the track data:')
     # print(json.dumps(track_identities))
-    print('choose one of the following as the album name:')
+    print('choose one of the following albums:')
     counter = 0
     album_ids = []
     for album_id in album_counts['ids_to_names']:
         album_name = album_counts['ids_to_names'][album_id]
-        print('[' + str(counter) + '] ' + album_name)
+        print('[' + str(counter) + '] ' + album_id + ' '+ album_name)
         album_ids.append(album_id)
-
-    response = int(input('correct album: '))
+        counter = counter + 1
+        
+    response = int(input('correct album: ').replace('\n', ''))
     album_blacklist = []
     for album in album_ids:
         if(album_id != album_ids[response]):
             album_blacklist.append(album_id)
         #
     #
-    track_identities = get_track_identities(flac_files, album_blacklist)
+    album_ids[0] = album_ids[response]
+    track_identities = get_track_identities(working_path, flac_files, album_blacklist)
     album_counts = get_album_counts(flac_files, track_identities)
 
 album_id = album_ids[0]
 art_path = get_album_art(album_id, working_path)
-tag_tracks(path, flac_files, art_path, track_identities)
+tag_tracks(working_path, flac_files, art_path, track_identities)
 print('done!')
 print(json.dumps(track_identities))
+
